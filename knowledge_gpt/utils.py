@@ -1,7 +1,7 @@
 import re
 from io import BytesIO
 from typing import Any, Dict, List
-
+from typing import List, Optional
 import docx2txt
 import streamlit as st
 from langchain.chains.qa_with_sources import load_qa_with_sources_chain
@@ -12,10 +12,10 @@ from langchain.vectorstores import VectorStore
 from langchain.vectorstores.faiss import FAISS
 from openai.error import AuthenticationError
 from pypdf import PdfReader
-
+import datetime
 from knowledge_gpt.embeddings import OpenAIEmbeddings
 from knowledge_gpt.prompts import STUFF_PROMPT
-
+import requests
 
 @st.experimental_memo()
 def parse_docx(file: BytesIO) -> str:
@@ -42,6 +42,32 @@ def parse_pdf(file: BytesIO) -> List[str]:
 
     return output
 
+@st.experimental_memo()
+def get_readwise_data(api_key: str,
+                       updated_after: Optional[datetime.datetime] = None):
+    """
+  Uses Readwise's export API to export all highlights, optionally after a specified date.
+
+  See https://readwise.io/api_deets for details.
+
+  Args:
+      updated_after (datetime.datetime): The datetime to load highlights after. Useful for updating indexes over time.
+  """
+    result = []
+    next_page = None
+    while True:
+        response = requests.get(
+            url="https://readwise.io/api/v2/export/",
+            params={
+                "pageCursor": next_page,
+                "updatedAfter": updated_after.isoformat() if updated_after else None
+            },
+            headers={"Authorization": f"Token {api_key}"})
+        response.raise_for_status()
+        result.extend(response.json()["results"])
+        next_page = response.json().get("nextPageCursor")
+        if not next_page: break
+    return result
 
 @st.experimental_memo()
 def parse_txt(file: BytesIO) -> str:
@@ -52,7 +78,7 @@ def parse_txt(file: BytesIO) -> str:
 
 
 @st.cache(allow_output_mutation=True)
-def text_to_docs(text: str | List[str]) -> List[Document]:
+def text_to_docs(text: str | List[str], title: str | List[str], author: str | List[str]) -> List[Document]:
     """Converts a string or list of strings to a list of Documents
     with metadata."""
     if isinstance(text, str):
@@ -62,24 +88,25 @@ def text_to_docs(text: str | List[str]) -> List[Document]:
 
     # Add page numbers as metadata
     for i, doc in enumerate(page_docs):
-        doc.metadata["page"] = i + 1
+        doc.metadata["author"] = author[i]
+        doc.metadata["title"] = title[i]
 
     # Split pages into chunks
     doc_chunks = []
 
     for doc in page_docs:
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=800,
+            chunk_size=1000,
             separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""],
-            chunk_overlap=0,
+            chunk_overlap=200,
         )
         chunks = text_splitter.split_text(doc.page_content)
         for i, chunk in enumerate(chunks):
             doc = Document(
-                page_content=chunk, metadata={"page": doc.metadata["page"], "chunk": i}
+                page_content=chunk, metadata={"author": doc.metadata["author"], "title": doc.metadata["title"], "chunk": i}
             )
             # Add sources a metadata
-            doc.metadata["source"] = f"{doc.metadata['page']}-{doc.metadata['chunk']}"
+            doc.metadata["source"] = f"Author: {doc.metadata['author']} Title: {doc.metadata['title']}"
             doc_chunks.append(doc)
     return doc_chunks
 
