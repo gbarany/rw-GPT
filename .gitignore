@@ -1,4 +1,5 @@
 # Local data
+.idea/
 data/local_data/
 
 # Secrets
