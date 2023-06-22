@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "knowledge-gpt"
+name = "rw-gpt"
 version = "0.1.0"
-description = "Accurate answers and instant citations for your documents"
+description = "Accurate answers and instant citations for your Readwise highlights"
 authors = ["mmz-001 <70096033+mmz-001@users.noreply.github.com>"]
 license = "MIT"
 readme = "README.md"
